@@ -2,7 +2,7 @@
 
 A "stroke by stroke" viewer that turns a photo into a marker drawing and paints it one stroke at a time, entirely in your browser. A tribute to [Faber van Eeden](https://fabervaneeden.nl/), the author's uncle, whose felt-tip marker drawings inspired the style.
 
-Live demo: https://arthurvaneeden.nl/faber/
+Live demo: https://craneofthewild.github.io/faber-shader/ (also embedded at https://arthurvaneeden.nl/project/faber-shader/stroke-by-stroke/)
 
 ## Features
 
@@ -28,7 +28,7 @@ The repository root is the site. Enable Pages with source "Deploy from a branch"
 ## Embed
 
 ```html
-<iframe src="https://arthurvaneeden.nl/faber/" width="100%" height="700" style="border:0"></iframe>
+<iframe src="https://arthurvaneeden.nl/project/faber-shader/stroke-by-stroke/" width="100%" height="700" style="border:0"></iframe>
 ```
 
 When embedded, the page posts `{faberHeight}` (its content height in pixels) to its parent, so the iframe can fit it:
