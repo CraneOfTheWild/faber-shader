@@ -173,7 +173,7 @@ input[type=file] { display: none; }
 (() => {
 'use strict';
 // Sources: the artifact copy fetches files published beside the page; the local copy fetches from ../out/.
-const SOURCES = [{"label": "Binnenhof", "photo": "data/binnenhof.jpg", "credit": "Photo: <a href=\"https://commons.wikimedia.org/wiki/File:Den_Haag_Binnenhof_02.jpg\">Den Haag Binnenhof 02</a> by Zairon, Wikimedia Commons, <a href=\"https://creativecommons.org/licenses/by-sa/4.0/\">CC BY-SA 4.0</a>; this drawing carries the same licence."}];
+const SOURCES = [{"label": "Binnenhof", "photo": "../examples/den-haag-binnenhof.jpg"}];
 const PALETTE = JSON.parse(document.getElementById('palette').textContent);
 // The same defaults as faber_shader.py 1.8 (taper, taper-len, tip-fade, streak); the JSON carries the rest per stroke.
 const TAPER = 0.2, TAPER_LEN = 0.7, TIP_FADE = 0.3, STREAK_MEAN = 0.25 * 0.5 * 0.7;
@@ -497,18 +497,37 @@ let loadTok = 0;
 // ---- generation settings: Marker and Realistic are fixed option sets (the engine's DEFAULTS and REALISTIC);
 // Custom takes the sliders. The sliders always show the values of the preset last chosen, until moved.
 const WIDTHS = [0.012, 0.0072, 0.004, 0.0024];   // the default pen widths; the 'Pen width' slider scales them together
-const SETTINGS = [   // key, label, min, max, step, decimals
-  ['max_len', 'Stroke length', 2, 60, 1, 0], ['min_len', 'Min length', 1, 10, 0.1, 1], ['wobble', 'Wobble', 0, 0.03, 0.001, 3],
-  ['width_scale', 'Pen width ×', 0.5, 2, 0.05, 2], ['ink_body', 'Ink body', 0, 1, 0.05, 2], ['contours', 'Contours'],
-  ['paper_show', 'Paper show', 0, 1, 0.05, 2], ['segments', 'Segments', 50, 400, 10, 0], ['seed', 'Seed', 1, 99, 1, 0]];
-const PRESETS = {
-  marker: { max_len: 20, min_len: 2, wobble: 0.01, width_scale: 1, ink_body: 0, contours: true, paper_show: 0.3, segments: 150, seed: 1 },
-  realistic: { max_len: 40, min_len: 1.2, wobble: 0.01, width_scale: 1, ink_body: 0.4, contours: false, paper_show: 0, segments: 150, seed: 1 },
+const SETTINGS = [   // key, label, min, max, step, decimals (checkboxes: key, label only); tooltips in TIPS
+  ['full_cover', 'Full coverage'], ['contours', 'Contours'],
+  ['max_len', 'Stroke length', 2, 60, 1, 0], ['min_len', 'Min length', 1, 10, 0.1, 1],
+  ['wobble', 'Wobble', 0, 0.03, 0.001, 3], ['wobble_min', 'Min wobble', 0, 0.5, 0.05, 2],
+  ['width_scale', 'Pen width ×', 0.5, 2, 0.05, 2], ['ink_body', 'Ink body', 0, 1, 0.05, 2],
+  ['lit_levels', 'Lit passes', 0, 3, 1, 0], ['paper_show', 'Paper show', 0, 1, 0.05, 2],
+  ['segments', 'Segments', 50, 400, 10, 0], ['seed', 'Seed', 1, 99, 1, 0]];
+const BOOLS = new Set(['full_cover', 'contours']);
+const TIPS = {
+  full_cover: 'On: every spot is painted up to its full tone (the realistic model). Off: the lighter marker model, which leaves paper showing and stops once the local average is close.',
+  contours: 'Outline the large areas first, in the pen of the darker neighbour. Drawn over the faded photo as the stencil.',
+  max_len: 'Longest stroke, in pen widths. Strokes grow while the colour underneath stays the same, up to this length.',
+  min_len: 'Shortest stroke that is still drawn, in pen widths. Higher: fewer tiny dabs.',
+  wobble: 'Hand wobble, as a fraction of the stroke length. 0 draws dead straight.',
+  wobble_min: 'Least wobble, as a fraction of the pen width, so short strokes wobble too.',
+  width_scale: 'Scales all four pens together (1.2% down to 0.24% of the long side at 1×).',
+  ink_body: 'How opaque the ink is. 0: ink only darkens, as a marker. Higher: a lighter stroke can cover a darker one.',
+  lit_levels: 'Number of coarse passes that paint the lit tone of an area; the finer passes add the shadow. 0: every pass aims at the photo itself.',
+  paper_show: 'How much white paper may stay visible: a spot counts as done when it is this close to the photo (marker model only).',
+  segments: 'Number of colour areas the photo is split into. More: smaller areas, finer detail, shorter strokes.',
+  seed: 'Random seed for stroke order, wobble and jitter. Same seed, same drawing.',
+};
+const PRESETS = {   // every option that differs between the two built-in presets is in here
+  marker: { full_cover: false, contours: true, max_len: 20, min_len: 2, wobble: 0.01, wobble_min: 0.05, width_scale: 1, ink_body: 0, lit_levels: 2, paper_show: 0.3, segments: 150, seed: 1 },
+  realistic: { full_cover: true, contours: false, max_len: 40, min_len: 1.2, wobble: 0.01, wobble_min: 0.25, width_scale: 1, ink_body: 0.4, lit_levels: 0, paper_show: 0, segments: 150, seed: 1 },
 };
 let lastPreset = 'realistic';
 for (const [k, label, min, max, step, dec] of SETTINGS) {
   const d = document.createElement('div'); d.className = 'set';
-  d.innerHTML = k === 'contours'
+  d.title = TIPS[k];
+  d.innerHTML = BOOLS.has(k)
     ? `<label for="s_${k}">${label}</label><input type="checkbox" id="s_${k}" style="justify-self:start"><span></span>`
     : `<label for="s_${k}">${label}</label><input type="range" id="s_${k}" min="${min}" max="${max}" step="${step}"><span class="num" id="v_${k}"></span>`;
   $('setgrid').appendChild(d);
@@ -516,18 +535,18 @@ for (const [k, label, min, max, step, dec] of SETTINGS) {
 function setSliders(v) {
   for (const [k, , , , , dec] of SETTINGS) {
     const el = $('s_' + k);
-    if (k === 'contours') el.checked = !!v[k]; else { el.value = v[k]; $('v_' + k).textContent = (+v[k]).toFixed(dec); }
+    if (BOOLS.has(k)) el.checked = !!v[k]; else { el.value = v[k]; $('v_' + k).textContent = (+v[k]).toFixed(dec); }
   }
 }
 function sliderValues() {
   const v = {};
-  for (const [k] of SETTINGS) v[k] = k === 'contours' ? $('s_' + k).checked : +$('s_' + k).value;
+  for (const [k] of SETTINGS) v[k] = BOOLS.has(k) ? $('s_' + k).checked : +$('s_' + k).value;
   return v;
 }
 // Engine options for the sliders; max_size is the same long side as for the presets.
 function customOptions() {
-  const v = sliderValues(), o = { ...v, max_size: OWN_MAX, style: (v.ink_body > 0 || !v.contours) ? 'realistic' : 'marker' };
-  o.widths = WIDTHS.map(w => +(w * v.width_scale).toFixed(5)); delete o.width_scale;
+  const v = sliderValues(), o = { ...v, max_size: OWN_MAX, style: v.full_cover ? 'realistic' : 'marker' };
+  o.widths = WIDTHS.map(w => +(w * v.width_scale).toFixed(5)); delete o.width_scale; delete o.full_cover;
   return o;
 }
 function syncPresetUi() {
@@ -540,7 +559,7 @@ function pendingHint() { $('convhint').textContent = 'Press Convert to apply'; }
 for (const [k, , , , , dec] of SETTINGS) {
   const el = $('s_' + k);
   el.addEventListener('input', () => {
-    if (k !== 'contours') $('v_' + k).textContent = (+el.value).toFixed(dec);
+    if (!BOOLS.has(k)) $('v_' + k).textContent = (+el.value).toFixed(dec);
     if (stySel.value !== 'custom') { stySel.value = 'custom'; syncPresetUi(); }
     pendingHint();
   });
@@ -676,7 +695,8 @@ document.addEventListener('keydown', e => {
 });
 
 const params = new URLSearchParams(location.search);
-if (['marker', 'realistic', 'custom'].includes(params.get('style'))) stySel.value = params.get('style');   // default: realistic
+const presetParam = params.get('preset') || params.get('style');   // ?preset=marker (old name: ?style=)
+if (['marker', 'realistic', 'custom'].includes(presetParam)) stySel.value = presetParam;   // default: realistic
 if (SOURCES.length) show(true);
 else $('hint').textContent = 'Pick a drawing or convert a photo of your own.';
 })();
