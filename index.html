@@ -1,0 +1,684 @@
+<!doctype html><html lang="nl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Faber Shader</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one drawing board on a grey studio desk, a thin control strip under it, the pen tray at the side. */
+:root {
+  --bg: #d9dcdf;          /* desk, cool grey */
+  --panel: #eceeef;       /* control strip */
+  --fg: #1c2328;
+  --muted: #5d6871;
+  --line: #b9bfc4;
+  --accent: #2d4f8e;      /* marker blue, like pen c10r06 */
+  --accent-ink: #ffffff;
+  --paper: #f5f2ea;
+  --display: "Instrument Serif", Georgia, "Times New Roman", serif;
+  --body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1a1e22; --panel: #23282d; --fg: #e8e5de; --muted: #9aa4ac; --line: #3b434a;
+    --accent: #7ea1e0; --accent-ink: #10151b; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1a1e22; --panel: #23282d; --fg: #e8e5de; --muted: #9aa4ac; --line: #3b434a;
+  --accent: #7ea1e0; --accent-ink: #10151b; color-scheme: dark;
+}
+html { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 14px; line-height: 1.45;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 12px 20px; box-sizing: border-box; min-height: 100%; display: flex; flex-direction: column; gap: 12px;
+}
+header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 16px; }
+h1 { font-family: var(--display); font-weight: 400; font-size: 1.9rem; margin: 0; letter-spacing: 0.01em; text-wrap: balance; }
+h1 em { font-style: italic; color: var(--muted); }
+.sub { color: var(--muted); font-size: 0.9rem; margin: 0; }
+.sub b { font-weight: 500; color: var(--fg); }
+
+.stage { flex: 1 1 auto; min-height: 240px; display: flex; gap: 16px; align-items: stretch; }
+.board { position: relative; flex: 1 1 auto; min-width: 0; display: flex; align-items: center; justify-content: center; }
+.side { flex: 0 0 11em; display: flex; flex-direction: column; gap: 10px; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 6px; padding: 12px; box-sizing: border-box; align-self: center; }
+.side .field { display: flex; flex-direction: column; gap: 4px; }
+.side select, .side button { width: 100%; box-sizing: border-box; }
+.side select { flex: none; }
+.side #thumb { display: block; width: 100%; height: auto; box-sizing: border-box; border-radius: 4px; border: 1px solid var(--line); }
+.side .credit { text-align: left; margin-top: auto; }
+@media (max-width: 640px) {
+  .stage { flex-direction: column; }
+  .side { flex: none; flex-direction: row; flex-wrap: wrap; align-self: stretch; align-items: end; }
+  .side .field, .side button { flex: 1 1 8em; width: auto; }
+  .side .credit { flex: 1 1 100%; }
+  .side #thumb { flex: 0 0 auto; width: auto; max-width: 100%; max-height: 120px; align-self: flex-start; }
+}
+.sheet { position: relative; box-shadow: 0 1px 2px rgba(0,0,0,.18), 0 12px 32px rgba(0,0,0,.18); background: var(--paper); max-width: 100%; }
+.sheet canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.sheet canvas.ink { mix-blend-mode: multiply; }
+.sheet canvas.paper { position: static; }
+
+.controls { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px 14px;
+  display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; align-items: center; }
+.controls .row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.controls .full { grid-column: 1 / -1; }
+.controls .sep { grid-column: 1 / -1; border: 0; border-top: 1px solid var(--line); margin: 2px 0; }   /* generation above, playback below */
+button { font: inherit; font-weight: 500; color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 4px;
+  padding: 5px 12px; cursor: pointer; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); min-width: 7em; }
+button:hover { border-color: var(--accent); }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input[type=range] { accent-color: var(--accent); flex: 1 1 120px; min-width: 0; }
+select { flex: 1 1 8em; min-width: 0; font: inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; max-width: 100%; }
+label { color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 0.9rem; white-space: nowrap; }
+.num.wide { min-width: 11ch; text-align: right; }
+#convval { white-space: normal; min-width: 0; flex: 0 1 auto; }
+
+.tray { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.pen { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 0.85rem; }
+.pen .cap { width: 18px; height: 18px; border-radius: 3px 3px 9px 9px; border: 1px solid rgba(0,0,0,.25); background: var(--paper); }
+.levels { display: flex; gap: 4px; flex-wrap: wrap; }
+.lv { font-size: 0.78rem; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.lv.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.lv.done { border-color: var(--accent); color: var(--fg); }
+.hint { color: var(--muted); font-size: 0.82rem; }
+.credit { color: var(--muted); font-size: 0.72rem; margin: 0.4rem 0 0; min-height: 1em; }
+.credit a { color: inherit; }
+.hint code { font-family: var(--mono); }
+input[type=file] { display: none; }
+[hidden] { display: none !important; }
+.chk { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+#settings summary { cursor: pointer; color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.setgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(17em, 1fr)); gap: 6px 24px; margin-top: 8px; }
+.set { display: grid; grid-template-columns: 7.5em minmax(0, 1fr) 4.5em; gap: 8px; align-items: center; }
+.set label { white-space: normal; }
+.set .num { text-align: right; }
+.setgrid.idle .set { opacity: 0.6; }
+@media (max-width: 560px) {
+  .controls { grid-template-columns: 1fr; }
+  .num.wide { text-align: left; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<header>
+  <h1>Faber Shader <em>stroke by stroke</em></h1>
+  <p class="sub" id="subtitle">A photo redrawn with felt-tip markers, in the order the shader laid down the strokes.</p>
+</header>
+
+<div class="stage">
+  <div class="board" id="board">
+    <div class="sheet" id="sheet">
+      <canvas class="paper" id="paper"></canvas>
+      <canvas class="ink" id="ink"></canvas>
+    </div>
+  </div>
+  <aside class="side">
+    <div class="field"><label for="source">Drawing</label><select id="source"></select></div>
+    <img id="thumb" alt="Source photo" title="Source photo" hidden>
+    <button id="own" title="Convert your own photo into strokes, in your browser (nothing is uploaded)">Your photo…</button>
+    <input type="file" id="photo" accept="image/*">
+    <button id="save" title="Save the drawing as it is now as a PNG">Download</button>
+    <p class="credit" id="credit"></p>
+  </aside>
+</div>
+
+<div class="controls">
+  <div class="row full">
+    <label for="style">Preset</label>
+    <select id="style" title="Marker and Realistic are fixed settings; Custom lets you change them" style="max-width:16em">
+      <option value="marker">Marker</option><option value="realistic" selected>Realistic</option><option value="custom">Custom</option></select>
+  </div>
+  <details class="full" id="settings">
+    <summary>Settings</summary>
+    <div class="setgrid" id="setgrid"></div>
+    <div class="row" style="margin-top:8px"><label class="chk"><input type="checkbox" id="pencil" checked> Stencil (pencil regions, photo underneath)</label></div>
+    <div class="row" style="margin-top:8px"><button class="primary" id="convert" title="Convert the photo with these settings">Convert</button>
+      <button id="reset" title="Back to the values of the preset you chose last">Reset</button>
+      <span class="hint" id="convhint"></span></div>
+  </details>
+  <div class="row full" id="convrow" hidden>
+    <label for="conv">Converting</label>
+    <progress id="conv" max="1" value="0" style="flex:1 1 8em;min-width:0"></progress>
+    <span class="num wide" id="convval" role="status" aria-live="polite"></span>
+  </div>
+  <hr class="sep" aria-hidden="true">
+  <div class="row">
+    <button class="primary" id="play">Play</button>
+    <button id="restart" title="Start again from the first stroke">Restart</button>
+    <button id="finish" title="Draw all strokes at once">Finish</button>
+  </div>
+  <div class="row">
+    <label for="speed">Speed</label>
+    <input type="range" id="speed" min="0" max="1000" value="520">
+    <span class="num wide" id="speedval"></span>
+  </div>
+  <div class="row full">
+    <label for="pos">Stroke</label>
+    <input type="range" id="pos" min="0" max="0" value="0">
+    <span class="num wide" id="posval">0 / 0</span>
+  </div>
+  <div class="row full tray">
+    <span class="pen"><span class="cap" id="cap"></span><span id="penname">—</span></span>
+    <span class="levels" id="levels"></span>
+    <span class="hint" id="hint"></span>
+  </div>
+</div>
+
+<script id="palette" type="application/json">{"paper":"#f5f2ea","pens":{"c01r01":"#b3a4a3","c01r02":"#fbc9eb","c01r03":"#fda7b9","c01r04":"#fc9bbd","c01r05":"#f89adb","c01r06":"#ee68c4","c01r07":"#f97bcd","c01r08":"#ef4187","c01r09":"#be4166","c01r10":"#dc4770","c02r01":"#dfb8a7","c02r02":"#f9cac2","c02r03":"#fdbeb4","c02r04":"#d99c9d","c02r05":"#e497b4","c02r06":"#fd8a89","c02r07":"#fb7179","c02r08":"#f77690","c02r09":"#e34954","c02r10":"#f64c54","c03r01":"#f19455","c03r02":"#d88e3e","c03r03":"#f8bd6c","c03r04":"#f98f54","c03r05":"#fb9c5d","c03r06":"#fcb390","c03r07":"#fb8b7f","c03r08":"#fda4b7","c03r09":"#f56960","c03r10":"#f8836f","c04r01":"#dfad7d","c04r02":"#ba9a6c","c04r03":"#c58342","c04r04":"#d5815d","c04r05":"#da795e","c04r06":"#c76862","c04r07":"#c37b6a","c04r08":"#875e52","c04r09":"#6a453c","c04r10":"#806368","c05r01":"#edd9b5","c05r02":"#cbdc5d","c05r03":"#d8dd8a","c05r04":"#e7e999","c05r05":"#e7d760","c05r06":"#edb75e","c05r07":"#f3c74c","c05r08":"#f5bf74","c05r09":"#faa257","c05r10":"#f2ab5f","c06r01":"#b1b695","c06r02":"#b1d5ad","c06r03":"#12cca0","c06r04":"#0bd3b2","c06r05":"#06c284","c06r06":"#04a48a","c06r07":"#8ac39f","c06r08":"#899b6c","c06r09":"#808058","c06r10":"#558c77","c07r01":"#bceaf8","c07r02":"#9fa9b1","c07r03":"#5bdff0","c07r04":"#29b8dc","c07r05":"#05a9dd","c07r06":"#04c5ee","c07r07":"#05dcd4","c07r08":"#03c5d3","c07r09":"#04c2c8","c07r10":"#07a6b3","c08r01":"#b9d6e7","c08r02":"#68b8d9","c08r03":"#3e7ba4","c08r04":"#6fe2fd","c08r05":"#09d6fc","c08r06":"#08cffc","c08r07":"#06aafa","c08r08":"#4a89cc","c08r09":"#4572d5","c08r10":"#4663a1","c09r01":"#b69cb3","c09r02":"#e2c9f3","c09r03":"#c2a4bd","c09r04":"#aea9b7","c09r05":"#79728b","c09r06":"#9d82a4","c09r07":"#705cae","c09r08":"#9e77c5","c09r09":"#9254a9","c09r10":"#8a316d","c10r01":"#b6b7b8","c10r02":"#a4adb5","c10r03":"#b2aeb4","c10r04":"#8caabc","c10r05":"#a5a1a6","c10r06":"#8c898e","c10r07":"#73818e","c10r08":"#5c6971","c10r09":"#4f5761","c10r10":"#7e7d81"}}</script>
+<script>
+(() => {
+'use strict';
+// Sources: the artifact copy fetches files published beside the page; the local copy fetches from ../out/.
+const SOURCES = [{"label": "Binnenhof", "photo": "data/binnenhof.jpg", "credit": "Photo: <a href=\"https://commons.wikimedia.org/wiki/File:Den_Haag_Binnenhof_02.jpg\">Den Haag Binnenhof 02</a> by Zairon, Wikimedia Commons, <a href=\"https://creativecommons.org/licenses/by-sa/4.0/\">CC BY-SA 4.0</a>; this drawing carries the same licence."}];
+const PALETTE = JSON.parse(document.getElementById('palette').textContent);
+// The same defaults as faber_shader.py 1.8 (taper, taper-len, tip-fade, streak); the JSON carries the rest per stroke.
+const TAPER = 0.2, TAPER_LEN = 0.7, TIP_FADE = 0.3, STREAK_MEAN = 0.25 * 0.5 * 0.7;
+// The script damps ink over ink (--overlap-damp 0.6, judged per pixel). Here, without a coverage buffer,
+// the later, finer levels get a fixed damping instead because they almost always land on earlier ink.
+const LEVEL_DAMP = { '-1': 1, 0: 1, 1: 0.8, 2: 0.6, 3: 0.5 };
+const BODY_COVER = 1;   // tuning factor for the source-over pass of ink with body
+const LEVEL_NAMES = { '-1': 'contours', 0: 'broad', 1: 'medium', 2: 'fine', 3: 'finest' };
+
+const $ = id => document.getElementById(id);
+const paperC = $('paper'), inkC = $('ink'), sheet = $('sheet'), board = $('board');
+const ink = inkC.getContext('2d');
+let inkBody = 0;   // 0 = marker (multiply only); > 0 = ink with body (faber_shader_realistic.py --ink-body)
+let data = null, strokes = [], pos = 0, playing = false, lastT = 0, scale = 1;
+
+// ---- speed: log slider from 2 to 20 000 strokes per second
+const speedOf = v => Math.round(2 * Math.pow(10000, v / 1000));
+// Shown as the length of the whole replay: the pace per stroke varies by pass (see computeInk), so a
+// strokes-per-second figure would not match what is on screen.
+function showSpeed() {
+  const n = strokes.length; if (!n) { $('speedval').textContent = ''; return; }
+  const sec = n * (1 + PENCIL_SHARE) / speedOf(+$('speed').value);
+  $('speedval').textContent = sec < 10 ? sec.toFixed(1) + ' s' : sec < 60 ? Math.round(sec) + ' s'
+    : Math.floor(sec / 60) + ':' + String(Math.round(sec % 60)).padStart(2, '0') + ' min';
+  $('speedval').title = 'Length of the whole replay at this speed';
+}
+$('speed').addEventListener('input', showSpeed); showSpeed();
+
+// ---- paper: flat tone with fibre and grain, like make_paper()
+function drawPaper(w, h) {
+  const c = paperC.getContext('2d');
+  c.fillStyle = PALETTE.paper; c.fillRect(0, 0, w, h);
+  const img = c.getImageData(0, 0, w, h), d = img.data;
+  const gw = Math.ceil(w / 3) + 2, gh = Math.ceil(h / 3) + 2, grain = new Float32Array(gw * gh);
+  for (let i = 0; i < grain.length; i++) grain[i] = Math.random() * 2 - 1;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const g = grain[Math.floor(y / 3) * gw + Math.floor(x / 3)];
+    const lum = 1 + 0.02 * (0.6 * g + 0.8 * (Math.random() * 2 - 1));
+    const i = (y * w + x) * 4;
+    d[i] = Math.min(255, d[i] * lum); d[i + 1] = Math.min(255, d[i + 1] * lum); d[i + 2] = Math.min(255, d[i + 2] * lum);
+  }
+  c.putImageData(img, 0, 0);
+}
+
+// ---- one stroke, as draw_segment() builds it: tilt, bow, three waves, taper, round cap, lighter tips
+function drawStroke(s) {
+  const L = Math.hypot(s.x1 - s.x0, s.y1 - s.y0);
+  if (L < 0.5) return;
+  const ux = (s.x1 - s.x0) / L, uy = (s.y1 - s.y0) / L, nx = -uy, ny = ux;
+  const mx = (s.x0 + s.x1) / 2, my = (s.y0 + s.y1) / 2;
+  const half = s.width / 2, tanT = Math.tan(s.tilt * Math.PI / 180);
+  const taperLen = Math.max(s.width * TAPER_LEN, 1), hookLen = s.hook_len || 1;
+  const n = Math.max(6, Math.min(64, Math.ceil(L / Math.max(1, s.width * 0.4))));
+  const left = [], right = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n, u = (t - 0.5) * L, sN = t - 0.5;
+    let c = u * tanT + s.bow * (1 - 4 * sN * sN);
+    for (const [ph, fr, wgt] of s.waves) c += s.amp * wgt * Math.sin(sN * 2 * Math.PI * fr + ph);
+    if (s.hook) { const th = Math.min(1, Math.max(0, (s.hook_end * u - (L / 2 - hookLen)) / hookLen)); c += s.hook * th * th; }
+    const tEnd = Math.min(1, Math.max(0, (Math.abs(u) - (L / 2 - taperLen)) / taperLen));
+    const hw = half * (1 - TAPER * tEnd);
+    const px = mx + u * ux + c * nx, py = my + u * uy + c * ny;
+    left.push([px + hw * nx, py + hw * ny]); right.push([px - hw * nx, py - hw * ny]);
+  }
+  const col = PALETTE.pens[s.pen] || '#808080';
+  const alpha = s.opacity * (1 - STREAK_MEAN) * (LEVEL_DAMP[s.level] ?? 0.6);
+  // tip fade along the stroke
+  const f = Math.min(0.5, taperLen / L), hex = a => col + Math.round(Math.min(1, Math.max(0, a)) * 255).toString(16).padStart(2, '0');
+  const gradient = al => {
+    const g = ink.createLinearGradient(s.x0, s.y0, s.x1, s.y1);
+    g.addColorStop(0, hex(al * (1 - TIP_FADE))); g.addColorStop(f, hex(al)); g.addColorStop(1 - f, hex(al)); g.addColorStop(1, hex(al * (1 - TIP_FADE)));
+    return g;
+  };
+  // outline: left edge, round cap, right edge back, round cap
+  const cap = (cx, cy, dx, dy, r, k) => { for (let i = 1; i < 6; i++) { const a = (i / 6 - 0.5) * Math.PI; ink.lineTo(cx + (dx * Math.cos(a) + k * nx * Math.sin(a)) * r, cy + (dy * Math.cos(a) + k * ny * Math.sin(a)) * r); } };
+  const r0 = half * (1 - TAPER), e0 = [(left[0][0] + right[0][0]) / 2, (left[0][1] + right[0][1]) / 2], e1 = [(left[n][0] + right[n][0]) / 2, (left[n][1] + right[n][1]) / 2];
+  ink.beginPath();
+  ink.moveTo(left[0][0], left[0][1]);
+  for (let i = 1; i < left.length; i++) ink.lineTo(left[i][0], left[i][1]);
+  cap(e1[0], e1[1], ux, uy, r0, -1);
+  for (let i = right.length - 1; i >= 0; i--) ink.lineTo(right[i][0], right[i][1]);
+  cap(e0[0], e0[1], -ux, -uy, r0, 1);
+  ink.closePath();
+  // marker: multiply only. With ink body b the stroke is multiplied * (1 - b) + covered * b; approximated by
+  // a multiply pass at alpha * (1 - b) followed by a source-over pass at alpha * b (equal to first order).
+  // The blend mode is set per stroke, so snapshots and rewinds never leave it in the wrong state.
+  ink.globalCompositeOperation = 'multiply';
+  ink.fillStyle = gradient(inkBody > 0 ? alpha * (1 - inkBody) : alpha); ink.fill();
+  if (inkBody > 0) {
+    ink.globalCompositeOperation = 'source-over';
+    ink.fillStyle = gradient(alpha * inkBody * BODY_COVER); ink.fill();
+    ink.globalCompositeOperation = 'multiply';
+  }
+}
+
+// ---- pencil underdrawing of the regions: the clean paper is kept in an offscreen canvas; paperC shows paper + pencil
+// at the current alpha, over a faded ghost of the source photo (tracing paper). The pencil is drawn piece by piece as the first phase of the replay (PENCIL_SHARE of
+// the ink budget), stays full until 60% of the broad pass and fades linearly to nothing at its end.
+let cleanPaper = null, pencilLayer = null, pencilQ = -1, pencilOn = true, broadFrom = 0, broadTo = 0;
+let pencilPieces = [], pencilDone = 0, ghostA = 1;   // ghostA: the photo under the pencil, 1 while tracing, gone before the strokes
+const PENCIL_SHARE = 0.06, TRACE_PART = 0.85;   // the pencil phase: pieces over the first 85%, the photo fades out over the last 15%
+function pencilCost() { return pencilOn && pencilPieces.length ? PENCIL_SHARE * cumInk[strokes.length] : 0; }
+function drawPencilTo(n) {
+  n = Math.min(n, pencilPieces.length); if (n <= pencilDone || !pencilLayer) return;
+  const g = pencilLayer.getContext('2d');
+  g.lineCap = 'round'; g.lineJoin = 'round'; g.strokeStyle = '#6b6a66';
+  for (; pencilDone < n; pencilDone++) {
+    const s = pencilPieces[pencilDone];
+    g.globalAlpha = s.a; g.lineWidth = s.lw; g.beginPath(); g.moveTo(s.x0, s.y0); g.lineTo(s.x1, s.y1); g.stroke();
+  }
+  applyPencil(true);
+}
+function setGhost(a) { a = Math.round(Math.max(0, Math.min(1, a)) * 20) / 20; if (a !== ghostA) { ghostA = a; applyPencil(true); } }
+function resetPencil() { pencilDone = 0; ghostA = 1; if (pencilLayer) pencilLayer.getContext('2d').clearRect(0, 0, pencilLayer.width, pencilLayer.height); applyPencil(true); }
+function keepPaper(w, h, devPx) {
+  cleanPaper = document.createElement('canvas'); cleanPaper.width = w; cleanPaper.height = h;
+  cleanPaper.getContext('2d').drawImage(paperC, 0, 0);
+  pencilLayer = null; pencilQ = -1; pencilPieces = []; pencilDone = 0;
+  // a drawing with a contour pass (the marker preset) outlines the areas itself, so it gets no pencil underdrawing;
+  // its contours are drawn over the faded photo instead (see ghostAlpha)
+  const regs = data && !strokes.some(s => s.level < 0) ? data.regions : null;
+  if (regs && regs.length) {
+    pencilLayer = document.createElement('canvas'); pencilLayer.width = w; pencilLayer.height = h;
+    const lw = Math.max(0.6, devPx);
+    for (const r of regs) {
+      // short pieces with their own alpha and a little wobble, so it reads as a quick hand-drawn line
+      for (let i = 0; i + 3 < r.length; i += 2) {
+        const x0 = r[i], y0 = r[i + 1], x1 = r[i + 2], y1 = r[i + 3], L = Math.hypot(x1 - x0, y1 - y0), n = Math.max(1, Math.ceil(L / 7));
+        for (let k = 0; k < n; k++) {
+          const a = k / n, b = (k + 1) / n, j = () => (Math.random() - 0.5) * 0.5;
+          pencilPieces.push({ x0: x0 + (x1 - x0) * a + j(), y0: y0 + (y1 - y0) * a + j(), x1: x0 + (x1 - x0) * b + j(), y1: y0 + (y1 - y0) * b + j(),
+                              a: 0.45 * (0.55 + 0.45 * Math.random()), lw: lw * (0.8 + 0.5 * Math.random()) });
+        }
+      }
+    }
+  }
+  broadFrom = broadTo = 0;
+  const lv = strokes.filter(s => s.level >= 0).map(s => s.level);
+  if (lv.length) {
+    const L0 = Math.min(...lv);
+    broadFrom = strokes.findIndex(s => s.level === L0);
+    broadTo = strokes.length; for (let i = broadFrom; i < strokes.length; i++) if (strokes[i].level !== L0) { broadTo = i; break; }
+  }
+}
+function pencilAlpha() {
+  if (!pencilOn || !pencilLayer) return 0;
+  const full = broadFrom + 0.6 * (broadTo - broadFrom);
+  const a = pos <= full ? 1 : pos >= broadTo ? 0 : 1 - (pos - full) / (broadTo - full);
+  return Math.round(a * 20) / 20;
+}
+// The faded photo under the drawing: with a pencil underdrawing it follows ghostA (the pencil phase);
+// with a contour pass instead (the marker preset) the contours are the stencil, so the photo stays
+// while they are drawn and fades out over the last 15% of that pass, before the broad strokes.
+function ghostAlpha() {
+  if (!pencilOn || !data || !data.ghost) return 0;
+  if (pencilPieces.length) return pos === 0 ? ghostA : 0;
+  if (broadFrom > 0) { const f = pos / broadFrom; return f >= 1 ? 0 : f < TRACE_PART ? 1 : Math.round((1 - (f - TRACE_PART) / (1 - TRACE_PART)) * 20) / 20; }
+  return 0;
+}
+function applyPencil(force) {
+  if (!cleanPaper || !data) return;
+  const q = pencilAlpha(), g = ghostAlpha(), key = q * 100 + g; if (key === pencilQ && !force) return;
+  pencilQ = key;
+  const c = paperC.getContext('2d');
+  c.globalAlpha = 1; c.drawImage(cleanPaper, 0, 0);
+  if (g > 0) { c.globalAlpha = 0.35 * g; c.drawImage(data.ghost, 0, 0, paperC.width, paperC.height); }
+  if (q > 0) { c.globalAlpha = q; c.drawImage(pencilLayer, 0, 0); }
+  c.globalAlpha = 1;
+}
+// ---- canvas setup and replay
+function setup() {
+  const w = data.width, h = data.height, dpr = Math.min(2, window.devicePixelRatio || 1);
+  const avail = board.clientWidth, availH = EMBEDDED ? 1e9 : Math.max(240, window.innerHeight - 260);
+  const fit = Math.min(avail / w, availH / h, 1.6);
+  sheet.style.width = Math.floor(w * fit) + 'px'; sheet.style.height = Math.floor(h * fit) + 'px';
+  scale = Math.min(2, Math.max(1, fit * dpr));
+  paperC.width = w; paperC.height = h; drawPaper(w, h);
+  keepPaper(w, h, 1 / (fit * dpr));
+  inkC.width = Math.round(w * scale); inkC.height = Math.round(h * scale);
+  resetInk();
+  $('pos').max = strokes.length;
+  clearSnaps(); computeInk(); showSpeed();
+  renderLevels();
+  pos = 0; updateReadout();
+}
+function resetInk() {
+  ink.setTransform(1, 0, 0, 1, 0, 0);
+  ink.globalCompositeOperation = 'source-over';
+  ink.fillStyle = '#fff'; ink.fillRect(0, 0, inkC.width, inkC.height);
+  ink.setTransform(scale, 0, 0, scale, 0, 0);
+  ink.globalCompositeOperation = 'multiply';
+}
+// ---- checkpoints: ink cannot be un-drawn (multiply blend), so keep up to SNAPS copies
+// of the canvas and scrub backwards from the nearest one instead of from zero.
+const SNAPS = 10; let snaps = [], snapEvery = 1000;
+function clearSnaps() { snaps = []; snapEvery = Math.max(500, Math.ceil(strokes.length / SNAPS)); }
+// ---- pacing: the fine passes hold most of the strokes but little of the ink (the finest pass of the
+// Binnenhof is half the strokes and a tenth of the ink), so playing them at the same strokes-per-second
+// made the second half crawl. Playback advances by ink laid down instead: each stroke weighs
+// (length × width × opacity)^0.7, scaled so the weights sum to the stroke count and the slider still
+// reads as an average strokes-per-second. The exponent keeps the broad pass from eating all the time.
+let cumInk = [0], progress = 0;
+function computeInk() {
+  cumInk = new Float64Array(strokes.length + 1); let sum = 0;
+  for (let i = 0; i < strokes.length; i++) {
+    const s = strokes[i]; sum += Math.pow(Math.hypot(s.x1 - s.x0, s.y1 - s.y0) * s.width * s.opacity, 0.7) + 1e-6; cumInk[i + 1] = sum;
+  }
+  const k = sum > 0 ? strokes.length / sum : 1;
+  for (let i = 1; i <= strokes.length; i++) cumInk[i] *= k;
+}
+function step() {
+  drawStroke(strokes[pos]); pos++;
+  if (pos % snapEvery === 0 && !snaps[pos / snapEvery]) {
+    const c = document.createElement('canvas'); c.width = inkC.width; c.height = inkC.height;
+    c.getContext('2d').drawImage(inkC, 0, 0); snaps[pos / snapEvery] = c;
+  }
+}
+function rewindTo(target) {
+  let k = Math.floor(target / snapEvery); while (k > 0 && !snaps[k]) k--;
+  resetInk(); pos = 0;
+  if (k === 0) return;
+  ink.setTransform(1, 0, 0, 1, 0, 0); ink.globalCompositeOperation = 'source-over';
+  ink.drawImage(snaps[k], 0, 0);
+  ink.setTransform(scale, 0, 0, scale, 0, 0); ink.globalCompositeOperation = 'multiply';
+  pos = k * snapEvery;
+}
+function drawTo(target) {
+  target = Math.max(0, Math.min(strokes.length, Math.round(target)));
+  if (target < pos) rewindTo(target);
+  while (pos < target) step();
+  updateReadout();
+}
+function renderLevels() {
+  const seen = []; for (const s of strokes) if (!seen.includes(s.level)) seen.push(s.level);
+  $('levels').innerHTML = seen.map(l => `<span class="lv" data-level="${l}">${LEVEL_NAMES[l] || 'level ' + l}</span>`).join('');
+}
+function updateReadout() {
+  $('pos').value = pos;
+  $('posval').textContent = pos.toLocaleString('en-GB') + ' / ' + strokes.length.toLocaleString('en-GB');
+  const s = strokes[Math.min(pos, strokes.length - 1)];
+  if (s) {
+    $('cap').style.background = PALETTE.pens[s.pen] || '#808080';
+    $('penname').textContent = `${s.pen} · ${s.width.toFixed(1)} px · ${Math.round(s.opacity * 100)}%`;
+    for (const el of $('levels').children) {
+      const l = +el.dataset.level; el.classList.toggle('on', l === s.level && pos < strokes.length);
+      el.classList.toggle('done', pos >= strokes.length || seenBefore(l, s.level));
+    }
+  }
+  applyPencil();
+  $('play').textContent = playing ? 'Pause' : (pos >= strokes.length ? 'Again' : 'Play');
+}
+function seenBefore(l, current) { const order = [...$('levels').children].map(e => +e.dataset.level); return order.indexOf(l) < order.indexOf(current); }
+
+function frame(t) {
+  if (!playing) return;
+  const dt = Math.min(0.1, (t - lastT) / 1000); lastT = t;
+  const pc = pencilCost();
+  progress = Math.min(cumInk[strokes.length] + pc, progress + speedOf(+$('speed').value) * dt);
+  if (pc > 0 && progress <= pc) {
+    const f = progress / pc;
+    drawPencilTo(Math.floor(Math.min(1, f / TRACE_PART) * pencilPieces.length));
+    setGhost(f < TRACE_PART ? 1 : 1 - (f - TRACE_PART) / (1 - TRACE_PART));
+  }
+  const budget = performance.now() + 24;   // keep the page responsive at very high speeds
+  while (pos < strokes.length && cumInk[pos + 1] + pc <= progress && performance.now() < budget) step();
+  updateReadout();
+  if (pos >= strokes.length) { playing = false; updateReadout(); return; }
+  requestAnimationFrame(frame);
+}
+function play() {
+  if (!strokes.length) return;
+  if (pos >= strokes.length) { resetInk(); pos = 0; resetPencil(); }
+  const pc = pencilCost();
+  playing = true; lastT = performance.now();
+  progress = pos > 0 || pencilDone >= pencilPieces.length ? cumInk[pos] + pc : pc * TRACE_PART * pencilDone / pencilPieces.length;
+  updateReadout(); requestAnimationFrame(frame);
+}
+function pause() { playing = false; updateReadout(); }
+
+$('play').addEventListener('click', () => playing ? pause() : play());
+$('restart').addEventListener('click', () => { pause(); resetInk(); pos = 0; resetPencil(); play(); });
+$('finish').addEventListener('click', () => { pause(); drawTo(strokes.length); });
+// ---- download: paper and ink composed the way the screen shows them (ink multiplied over the paper),
+// at the ink canvas resolution; works at any point of the replay, so half-finished stages can be saved too.
+let currentLabel = '';
+$('save').addEventListener('click', () => {
+  if (!strokes.length) return;
+  const c = document.createElement('canvas'); c.width = inkC.width; c.height = inkC.height;
+  const g = c.getContext('2d');
+  g.imageSmoothingQuality = 'high'; g.drawImage(paperC, 0, 0, c.width, c.height);
+  g.globalCompositeOperation = 'multiply'; g.drawImage(inkC, 0, 0);
+  const name = (currentLabel || 'faber').toLowerCase().replace(/\s*\((realistic|custom)\)/, '-$1').replace(/[^a-z0-9-]+/g, '-').replace(/^-|-$/g, '');
+  const part = pos >= strokes.length ? '' : `-${pos}-of-${strokes.length}`;
+  c.toBlob(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `${name}${part}.png`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); }, 'image/png');
+});
+$('pos').addEventListener('input', e => { const v = +e.target.value; pause(); if (v > 0) drawPencilTo(pencilPieces.length); drawTo(v); });
+window.addEventListener('resize', () => { if (data) { const p = pos; setup(); drawTo(p); } });
+// ---- embedded in another page (the site's iframe): the board is sized by width only, so the page
+// height follows the content, and the parent is told that height to grow the iframe to fit.
+const EMBEDDED = window.parent !== window;
+if (EMBEDDED) {
+  // Inside an iframe the document must not fill the frame (it is the frame that follows the document),
+  // else the measured height can only grow.
+  document.documentElement.style.height = 'auto'; document.body.style.minHeight = '0';
+  let last = 0;
+  const report = () => { const h = Math.ceil(document.body.getBoundingClientRect().height) + 2; if (h !== last) { last = h; window.parent.postMessage({ faberHeight: h }, '*'); } };
+  new ResizeObserver(report).observe(document.body); window.addEventListener('load', report);
+}
+
+// ---- loading
+function load(json, label) {
+  pause();
+  if (!json || !Array.isArray(json.strokes)) { $('hint').textContent = 'This file has no strokes list.'; return; }
+  data = json; strokes = json.strokes; currentLabel = label; inkBody = Math.min(1, Math.max(0, +json.ink_body || 0));
+  $('subtitle').innerHTML = `<b>${label}</b> · ${json.width} × ${json.height} px · ${strokes.length.toLocaleString('en-GB')} strokes`;
+  $('hint').textContent = '';
+  setup();
+  play();
+}
+let loadTok = 0;
+// ---- generation settings: Marker and Realistic are fixed option sets (the engine's DEFAULTS and REALISTIC);
+// Custom takes the sliders. The sliders always show the values of the preset last chosen, until moved.
+const WIDTHS = [0.012, 0.0072, 0.004, 0.0024];   // the default pen widths; the 'Pen width' slider scales them together
+const SETTINGS = [   // key, label, min, max, step, decimals
+  ['max_len', 'Stroke length', 2, 60, 1, 0], ['min_len', 'Min length', 1, 10, 0.1, 1], ['wobble', 'Wobble', 0, 0.03, 0.001, 3],
+  ['width_scale', 'Pen width ×', 0.5, 2, 0.05, 2], ['ink_body', 'Ink body', 0, 1, 0.05, 2], ['contours', 'Contours'],
+  ['paper_show', 'Paper show', 0, 1, 0.05, 2], ['segments', 'Segments', 50, 400, 10, 0], ['seed', 'Seed', 1, 99, 1, 0]];
+const PRESETS = {
+  marker: { max_len: 20, min_len: 2, wobble: 0.01, width_scale: 1, ink_body: 0, contours: true, paper_show: 0.3, segments: 150, seed: 1 },
+  realistic: { max_len: 40, min_len: 1.2, wobble: 0.01, width_scale: 1, ink_body: 0.4, contours: false, paper_show: 0, segments: 150, seed: 1 },
+};
+let lastPreset = 'realistic';
+for (const [k, label, min, max, step, dec] of SETTINGS) {
+  const d = document.createElement('div'); d.className = 'set';
+  d.innerHTML = k === 'contours'
+    ? `<label for="s_${k}">${label}</label><input type="checkbox" id="s_${k}" style="justify-self:start"><span></span>`
+    : `<label for="s_${k}">${label}</label><input type="range" id="s_${k}" min="${min}" max="${max}" step="${step}"><span class="num" id="v_${k}"></span>`;
+  $('setgrid').appendChild(d);
+}
+function setSliders(v) {
+  for (const [k, , , , , dec] of SETTINGS) {
+    const el = $('s_' + k);
+    if (k === 'contours') el.checked = !!v[k]; else { el.value = v[k]; $('v_' + k).textContent = (+v[k]).toFixed(dec); }
+  }
+}
+function sliderValues() {
+  const v = {};
+  for (const [k] of SETTINGS) v[k] = k === 'contours' ? $('s_' + k).checked : +$('s_' + k).value;
+  return v;
+}
+// Engine options for the sliders; max_size is the same long side as for the presets.
+function customOptions() {
+  const v = sliderValues(), o = { ...v, max_size: OWN_MAX, style: (v.ink_body > 0 || !v.contours) ? 'realistic' : 'marker' };
+  o.widths = WIDTHS.map(w => +(w * v.width_scale).toFixed(5)); delete o.width_scale;
+  return o;
+}
+function syncPresetUi() {
+  const custom = stySel.value === 'custom';
+  $('setgrid').classList.toggle('idle', !custom);
+  $('convert').disabled = !custom;
+  if (custom) $('settings').open = true; else $('convhint').textContent = '';
+}
+function pendingHint() { $('convhint').textContent = 'Press Convert to apply'; }
+for (const [k, , , , , dec] of SETTINGS) {
+  const el = $('s_' + k);
+  el.addEventListener('input', () => {
+    if (k !== 'contours') $('v_' + k).textContent = (+el.value).toFixed(dec);
+    if (stySel.value !== 'custom') { stySel.value = 'custom'; syncPresetUi(); }
+    pendingHint();
+  });
+}
+$('reset').addEventListener('click', () => {
+  setSliders(PRESETS[lastPreset]);
+  if (stySel.value === 'custom') pendingHint();
+});
+$('convert').addEventListener('click', () => show(true));
+
+// ---- converting: the bundled photo and an uploaded one take the same path, in a Web Worker (engine/), entirely in the browser
+const OWN_MAX = 700;   // long side in px: keeps the conversion to a few seconds
+const PHASES = { flatten: 'flattening colours', segment: 'finding areas', contours: 'contours', done: 'done' };
+let worker = null;
+function phaseName(p) { return /^level (\d)/.test(p) ? 'level ' + p.slice(6) : (PHASES[p] || p); }
+function convStatus(text, frac) {
+  $('convrow').hidden = false; $('convval').textContent = text;
+  if (frac == null) $('conv').removeAttribute('value'); else $('conv').value = frac;
+}
+function stopWorker() { if (worker) { worker.terminate(); worker = null; } }
+// "Current image": the bundled photo of the selected drawing (id = index) or the upload (id 'own'); decoded once.
+// Results are cached per image and options, so switching Marker/Realistic converts once each.
+const STYLE_NAMES = { marker: 'Marker', realistic: 'Realistic', custom: 'Custom' };
+let ownImage = null, ownThumb = '', bundImages = {}, convCache = {};
+async function decodeImage(blob) {
+  const bmp = await createImageBitmap(blob);
+  const k = Math.min(1, OWN_MAX / Math.max(bmp.width, bmp.height));
+  const w = Math.max(1, Math.round(bmp.width * k)), h = Math.max(1, Math.round(bmp.height * k));
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const cx = c.getContext('2d', { willReadFrequently: true });
+  cx.fillStyle = '#fff'; cx.fillRect(0, 0, w, h);
+  cx.drawImage(bmp, 0, 0, w, h);
+  return cx.getImageData(0, 0, w, h);
+}
+async function loadPhoto(file) {
+  stopWorker(); pause(); loadTok++;
+  convStatus('reading photo…', null);
+  try {
+    ownImage = await decodeImage(file); ownThumb = thumbOf(ownImage);
+    for (const k of Object.keys(convCache)) if (k.startsWith('own|')) delete convCache[k];
+  } catch (e) { convStatus('This image could not be read.', 0); return; }
+  if (!sel.querySelector('option[value="own"]')) { const o = document.createElement('option'); o.value = 'own'; o.textContent = 'Your photo'; sel.appendChild(o); }
+  sel.value = 'own';
+  show(true);
+}
+// The photo being converted, faded on the sheet in place of the paper, until the strokes replace it.
+function showGhost(img) {
+  data = null; strokes = []; pos = 0; $('pos').max = 0; cleanPaper = null; pencilLayer = null; showSpeed();
+  const w = img.width, h = img.height;
+  const fit = Math.min(board.clientWidth / w, EMBEDDED ? 1e9 : Math.max(240, window.innerHeight - 260) / h, 1.6);
+  sheet.style.width = Math.floor(w * fit) + 'px'; sheet.style.height = Math.floor(h * fit) + 'px';
+  const t = document.createElement('canvas'); t.width = w; t.height = h; t.getContext('2d').putImageData(img, 0, 0);
+  paperC.width = w; paperC.height = h;
+  const c = paperC.getContext('2d'); c.fillStyle = PALETTE.paper; c.fillRect(0, 0, w, h);
+  c.globalAlpha = 0.35; c.drawImage(t, 0, 0); c.globalAlpha = 1;
+  scale = 1; inkC.width = w; inkC.height = h; resetInk(); updateReadout();
+}
+function thumbOf(img) {
+  const t = document.createElement('canvas'); t.width = img.width; t.height = img.height; t.getContext('2d').putImageData(img, 0, 0);
+  return t.toDataURL('image/jpeg', 0.8);
+}
+function setThumb(url) { const t = $('thumb'); if (url) { t.src = url; t.hidden = false; } else { t.removeAttribute('src'); t.hidden = true; } }
+// Converts `img` with `options` in a worker, stores the result in convCache[key], then calls done().
+function convertWith(img, options, key, styleName, done) {
+  stopWorker(); pause(); showGhost(img);
+  convStatus('starting…', 0);
+  const t0 = performance.now();
+  let wk;
+  try { wk = worker = new Worker('engine/faber-worker.js', { type: 'module' }); }
+  catch (e) { convStatus('Conversion does not work in this browser.', 0); return; }
+  wk.onmessage = ev => {
+    const m = ev.data;
+    if (m.type === 'progress') {
+      convStatus(`${phaseName(m.phase)} · ${Math.round(m.overall * 100)}%${m.painted ? ' · ' + m.painted.toLocaleString('en-GB') + ' strokes' : ''}`, m.overall);
+    } else if (m.type === 'result') {
+      stopWorker();
+      convStatus(`done in ${((performance.now() - t0) / 1000).toFixed(1)} s · ${styleName} style`, 1);
+      const ghost = document.createElement('canvas'); ghost.width = img.width; ghost.height = img.height; ghost.getContext('2d').putImageData(img, 0, 0);
+      convCache[key] = { pens: m.palette.pens, json: { width: m.width, height: m.height, strokes: m.strokes, ink_body: m.ink_body || 0, regions: m.regions || [], ghost } };
+      done();
+    } else if (m.type === 'error') {
+      stopWorker(); convStatus('Conversion failed: ' + String(m.message).split('\n')[0], 0);
+    }
+  };
+  wk.onerror = ev => { stopWorker(); convStatus('Conversion failed: ' + (ev.message || 'worker could not start'), 0); };
+  const d = img.data.slice();   // the worker gets a copy; the original stays for the next conversion
+  wk.postMessage({ imageData: { width: img.width, height: img.height, data: d }, options }, [d.buffer]);
+}
+function showCached(key, label) {
+  Object.assign(PALETTE.pens, convCache[key].pens);
+  load(convCache[key].json, label);
+}
+$('own').addEventListener('click', () => $('photo').click());
+$('photo').addEventListener('change', e => { const f = e.target.files[0]; if (f) loadPhoto(f); e.target.value = ''; });
+$('pencil').addEventListener('change', e => { pencilOn = e.target.checked; applyPencil(true); });
+
+// Drawing picks the image, Preset the options. A source is {label, photo, credit}.
+const sel = $('source'), stySel = $('style');
+for (const [i, s] of SOURCES.entries()) { const o = document.createElement('option'); o.value = i; o.textContent = s.label; sel.appendChild(o); }
+// force: run a Custom conversion now (Convert button, new photo, new drawing); otherwise Custom only waits for the button.
+async function show(force) {
+  const own = sel.value === 'own', id = own ? 'own' : sel.value, src = own ? null : SOURCES[+id];
+  const name = own ? 'Your photo' : src.label, style = stySel.value;
+  if (style !== 'custom') { setSliders(PRESETS[style]); lastPreset = style; }
+  syncPresetUi();
+  setThumb(own ? ownThumb : src.photo);
+  $('credit').innerHTML = own ? '' : (src.credit || '');
+  if (style === 'custom' && !force) { pendingHint(); return; }
+  if (style === 'custom') $('convhint').textContent = '';
+  stopWorker(); pause();
+  const tok = ++loadTok;
+  const opts = style === 'custom' ? customOptions() : { max_size: OWN_MAX, seed: 1, style };
+  const key = `${id}|${style === 'custom' ? JSON.stringify(opts) : style}`, label = `${name} (${style})`;
+  if (convCache[key]) { $('convrow').hidden = true; return showCached(key, label); }
+  $('subtitle').innerHTML = `<b>${name}</b> · converting…`;
+  let img = own ? ownImage : bundImages[id];
+  if (!img) {
+    convStatus('reading photo…', null);
+    try {
+      const r = await fetch(src.photo); if (!r.ok) throw new Error(r.status);
+      img = await decodeImage(await r.blob());
+      if (tok !== loadTok) return;
+      bundImages[id] = img;
+    } catch (e) { if (tok === loadTok) convStatus('The source photo could not be loaded.', 0); return; }
+  }
+  convertWith(img, opts, key, STYLE_NAMES[style], () => showCached(key, label));
+}
+sel.addEventListener('change', () => show(true));
+stySel.addEventListener('change', () => show());
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (e.code === 'Space') { e.preventDefault(); playing ? pause() : play(); }
+});
+
+const params = new URLSearchParams(location.search);
+if (['marker', 'realistic', 'custom'].includes(params.get('style'))) stySel.value = params.get('style');   // default: realistic
+if (SOURCES.length) show(true);
+else $('hint').textContent = 'Pick a drawing or convert a photo of your own.';
+})();
+</script>
+</body></html>
